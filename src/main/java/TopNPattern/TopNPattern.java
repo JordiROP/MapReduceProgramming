@@ -1,23 +1,25 @@
 package TopNPattern;
 
-import SingleApplication.LowerCaseMapper;
-import SingleApplication.TopicGathererMapper;
-import TrendingTopics.TrendingTopics;
 import org.apache.commons.collections4.MultiValuedMap;
 import org.apache.commons.collections4.multimap.ArrayListValuedHashMap;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
-import org.apache.hadoop.mapreduce.lib.chain.ChainMapper;
-import org.apache.hadoop.mapreduce.lib.chain.ChainReducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.KeyValueTextInputFormat;
+import org.apache.hadoop.mapreduce.lib.jobcontrol.ControlledJob;
+import org.apache.hadoop.mapreduce.lib.jobcontrol.JobControl;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.Tool;
+import org.apache.hadoop.util.ToolRunner;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -25,17 +27,18 @@ import org.json.simple.parser.ParseException;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.TreeMap;
+import java.util.*;
+import java.util.stream.Collectors;
 
-public class TopNPattern {
+import static java.lang.Thread.sleep;
+
+public class TopNPattern extends Configured implements Tool {
     public static class TopicMapper extends Mapper<Object, Text, Text, LongWritable> {
         private final static LongWritable one = new LongWritable(1);
         private final Text word = new Text();
 
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             try {
-                System.out.println("TopicMapper: " + value.toString());
                 JSONParser jsonParser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) jsonParser.parse(value.toString());
                 JSONObject entitiesJSONObj = (JSONObject) jsonObject.get("entities");
@@ -57,7 +60,6 @@ public class TopNPattern {
     public static class CounterReducer extends Reducer<Text, LongWritable, Text, LongWritable> {
         private final LongWritable result = new LongWritable();
         public void reduce(Text key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
-            System.out.println("CounterReducer: " + key.toString());
             int sum = 0;
             for (LongWritable val : values) {
                 sum += val.get();
@@ -67,83 +69,129 @@ public class TopNPattern {
         }
     }
 
-    public static class TopNMapper extends Mapper<Text, LongWritable, NullWritable, Text> {
-        private final TreeMap<LongWritable, Text> topNTreeMap = new TreeMap<>();
+    public static class TopNMapper extends Mapper<Text, Text, NullWritable, Text> {
+        private final MultiValuedMap<Integer, Text> multiMap = new ArrayListValuedHashMap<>();
 
-        public void map(Text key, LongWritable value, Context context) {
-            System.out.println("TOPNMAPPER: " + key.toString());
+        public void map(Text key, Text value, Context context) {
             int N = 2 * Integer.parseInt(context.getConfiguration().get("N"));
             Text word = new Text();
-            word.set(key.toString() + "," + value);
-            topNTreeMap.put(value, word);
-            if (topNTreeMap.size() > N) {
-                topNTreeMap.remove(topNTreeMap.firstKey());
+            int weight = Integer.parseInt(value.toString());
+            word.set(key.toString() + "," + value.toString());
+
+            multiMap.put(weight, word);
+            if (multiMap.size() > N) {
+                int minKey = getMinKey(multiMap.keySet());
+                Text val = multiMap.get(minKey).iterator().next();
+                multiMap.removeMapping(minKey, val);
             }
+        }
+
+        private int getMinKey(Set<Integer> keys) {
+            Iterator<Integer> keysIter = keys.iterator();
+            int minVal = keysIter.next();
+            while(keysIter.hasNext()) {
+                int val = keysIter.next();
+                minVal = Math.min(val, minVal);
+            }
+            return minVal;
         }
 
         @Override
         public void cleanup(Context context) throws IOException, InterruptedException {
-            for (Text t : topNTreeMap.values()) {
-                System.out.println("cleanup: " + t.toString());
+            for (Text t : multiMap.values()) {
                 context.write(NullWritable.get(), t);
             }
         }
     }
 
     public static class TopNReducer extends Reducer<NullWritable, Text, NullWritable, Text> {
-        private final TreeMap<LongWritable, Text> topNTreeMap = new TreeMap<>();
+        private final MultiValuedMap<Integer, Text> multiMap = new ArrayListValuedHashMap<>();
 
         public void reduce(NullWritable key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             int N = Integer.parseInt(context.getConfiguration().get("N"));
             for(Text value: values) {
                 String[] valueKey = value.toString().split(",");
-                LongWritable weight = new LongWritable(Integer.parseInt(valueKey[1]));
+                int weight = Integer.parseInt(valueKey[1]);
                 Text topic = new Text(valueKey[0]);
-                topNTreeMap.put(weight, topic);
-
-                if (topNTreeMap.size() > N) {
-                    topNTreeMap.remove(topNTreeMap.firstKey());
-                }
-
-                for (Text word : topNTreeMap.descendingMap().values()) {
-                    context.write(NullWritable.get(), word);
-                }
+                multiMap.put(weight, topic);
             }
+            List<Integer> sortedKeys = sort(multiMap.keySet());
+            int elemsWritten = 0;
+
+            for(int k: sortedKeys) {
+                for(Text t: multiMap.get(k)) {
+                    context.write(NullWritable.get(), t);
+                    elemsWritten++;
+                    if(elemsWritten == N) { break; }
+                }
+                if(elemsWritten == N) { break; }
+            }
+        }
+
+        private List<Integer> sort(Set<Integer> keys) {
+            List<Integer> sortedKeys = new ArrayList<>(keys);
+            sortedKeys.sort(Integer::compareTo);
+            Collections.reverse(sortedKeys);
+            return sortedKeys;
         }
     }
 
-    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException, URISyntaxException {
-        Configuration conf = new Configuration();
 
-        Path outputPath = new Path(args[1]);
-        FileSystem fs = FileSystem.get(new URI(outputPath.toString()), conf);
-        fs.delete(outputPath, true);
+    public int run (String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        // JOBS EXECUTIONS
+        JobControl jobControl = new JobControl("Double Job");
 
-        Job job = Job.getInstance(conf, "TOP N PATTERN");
-        job.setJarByClass(TopNPattern.class);
+        // JOB Map-Reduce HashtagCounter
+        Configuration confJobTopicCounter = new Configuration();
+        Job jobTopicCounter = Job.getInstance(confJobTopicCounter, "HashtagCounter");
+        jobTopicCounter.setJarByClass(TopNPattern.class);
 
-        // TopicMapper
-        Configuration topicMapperConf = new Configuration(false);
-        ChainMapper.addMapper(job, TopicMapper.class, Object.class, Text.class, Text.class,
-                LongWritable.class, topicMapperConf);
+        FileInputFormat.addInputPath(jobTopicCounter, new Path(args[0]));
+        FileOutputFormat.setOutputPath(jobTopicCounter, new Path("src/main/resources/temp"));
 
-        // TopicReducer
-        Configuration counterReducerConf = new Configuration(false);
-        ChainReducer.setReducer(job, CounterReducer.class, Text.class, LongWritable.class, Text.class,
-                LongWritable.class, counterReducerConf);
+        jobTopicCounter.setMapperClass(TopicMapper.class);
+        jobTopicCounter.setReducerClass(CounterReducer.class);
 
-        // TOP - N
-        Configuration topNComputerConf = new Configuration(false);
-        topNComputerConf.set("N", args[2]);
-        ChainReducer.addMapper(job, TopNMapper.class, Text.class, LongWritable.class, NullWritable.class,
-                Text.class, topNComputerConf);
+        jobTopicCounter.setOutputKeyClass(Text.class);
+        jobTopicCounter.setOutputValueClass(LongWritable.class);
 
-        ChainReducer.setReducer(job, TopNReducer.class, NullWritable.class, Text.class, NullWritable.class,
-                Text.class, topNComputerConf);
+        ControlledJob controlledJobTopicCounter = new ControlledJob(confJobTopicCounter);
+        controlledJobTopicCounter.setJob(jobTopicCounter);
+        jobControl.addJob(controlledJobTopicCounter);
 
-        FileInputFormat.addInputPath(job, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        // JOB Top-N
+        Configuration confJobTopN = new Configuration();
+        confJobTopN.set("N", args[2]);
 
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
+        Job jobTopN = Job.getInstance(confJobTopN, "TopN");
+        jobTopN.setJarByClass(TopNPattern.class);
+
+        FileInputFormat.addInputPath(jobTopN, new Path("src/main/resources/temp"));
+        FileOutputFormat.setOutputPath(jobTopN, new Path(args[1]));
+
+        jobTopN.setMapperClass(TopNMapper.class);
+        jobTopN.setReducerClass(TopNReducer.class);
+
+        jobTopN.setOutputKeyClass(NullWritable.class);
+        jobTopN.setOutputValueClass(Text.class);
+        jobTopN.setInputFormatClass(KeyValueTextInputFormat.class);
+
+        ControlledJob controlledJobTopN = new ControlledJob(confJobTopN);
+        controlledJobTopN.setJob(jobTopN);
+        controlledJobTopN.addDependingJob(controlledJobTopicCounter);
+        jobControl.addJob(controlledJobTopN);
+
+        Thread runJControl = new Thread(jobControl);
+        runJControl.start();
+
+        while (!jobControl.allFinished()) {
+            sleep(5000);
+        }
+        return jobTopN.waitForCompletion(true) ? 0 : 1;
     }
+    public static void main(String[] args) throws Exception {
+        int exitCode = ToolRunner.run(new TopNPattern(), args);
+        System.exit(exitCode);
+    }
+
 }
