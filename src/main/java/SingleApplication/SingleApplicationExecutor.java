@@ -1,65 +1,101 @@
 package SingleApplication;
 
-import TextCleanUp.TextCleanUp;
-import TrendingTopics.TrendingTopics;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.chain.ChainMapper;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.KeyValueTextInputFormat;
+import org.apache.hadoop.mapreduce.lib.jobcontrol.ControlledJob;
+import org.apache.hadoop.mapreduce.lib.jobcontrol.JobControl;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.Tool;
+import org.apache.hadoop.util.ToolRunner;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 
-public class SingleApplicationExecutor {
+import static java.lang.Thread.sleep;
 
-    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException, URISyntaxException {
-        Configuration conf = new Configuration();
-        Path outputPath = new Path(args[1]);
-        FileSystem fs = FileSystem.get(new URI(outputPath.toString()), conf);
-        fs.delete(outputPath, true);
+public class SingleApplicationExecutor extends Configured implements Tool {
 
-        Job job = Job.getInstance(conf, "Text Clean Up");
-        job.setJarByClass(TextCleanUp.class);
+    public int run (String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        // JOBS EXECUTIONS
+        JobControl jobControl = new JobControl("Double Job");
+
+        // JOB Map-Reduce HashtagCounter
+        Configuration confJobTopicCounterCleanUp = new Configuration();
+        Job jobTopicCounterCleanUp = Job.getInstance(confJobTopicCounterCleanUp, "HashtagCounter");
+        jobTopicCounterCleanUp.setJarByClass(TopNPattern.class);
+
+        FileInputFormat.addInputPath(jobTopicCounterCleanUp, new Path(args[0]));
+        FileOutputFormat.setOutputPath(jobTopicCounterCleanUp, new Path("src/main/resources/temp"));
 
         // LowerCaseMapper
-        Configuration lowerCaseMapperConf = new Configuration(false);
-        ChainMapper.addMapper(job, LowerCaseMapper.class, Object.class, Text.class, Text.class,
-                LongWritable.class, lowerCaseMapperConf);
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.LowerCaseMapper.class, Object.class,
+                Text.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
 
-        // RemoveLackingFieldsMapper
-        Configuration removeLackingFieldsMapperConf = new Configuration(false);
-        ChainMapper.addMapper(job, RemoveLackingFieldsMapper.class, Text.class, LongWritable.class, Text.class,
-                LongWritable.class, removeLackingFieldsMapperConf);
+        // RemovalLackingFieldsMapper
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.RemoveLackingFieldsMapper.class, Text.class,
+                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
 
-        // FieldSelectorMapper
-        Configuration fieldSelectorMapperConf = new Configuration(false);
-        ChainMapper.addMapper(job, FieldSelectorMapper.class, Text.class, LongWritable.class, Text.class,
-                LongWritable.class, fieldSelectorMapperConf);
+        // RemovalNotUsedFieldsMapper
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.FieldSelectorMapper.class, Text.class,
+                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
 
-        // LanguageFilterMapper
-        Configuration languageFilterMapperConf = new Configuration(false);
-        ChainMapper.addMapper(job, LanguageFilterMapper.class, Text.class, LongWritable.class, Text.class,
-                LongWritable.class, languageFilterMapperConf);
+        // FilterLanguageMapper
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.LanguageFilterMapper.class, Text.class,
+                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
 
-        // TopicGathererMapper
-        Configuration topicGathererMapperConf = new Configuration(false);
-        ChainMapper.addMapper(job, TopicGathererMapper.class, Text.class, LongWritable.class, Text.class,
-                LongWritable.class, topicGathererMapperConf);
+        // TrendingTopicMapper
+        ChainMapper.addMapper(jobTopicCounterCleanUp, TrendingTopics.TrendingTopicMapper.class, Text.class,
+                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
 
-        // Counter Reducer
-        job.setReducerClass(TrendingTopics.CounterReducer.class);
-        job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(LongWritable.class);
+        // TrendingTopicReducer
+        jobTopicCounterCleanUp.setReducerClass(TrendingTopics.TrendingTopicReducer.class);
 
-        FileInputFormat.addInputPath(job, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        jobTopicCounterCleanUp.setOutputKeyClass(Text.class);
+        jobTopicCounterCleanUp.setOutputValueClass(LongWritable.class);
 
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
+        ControlledJob controlledJobTopicCounter = new ControlledJob(confJobTopicCounterCleanUp);
+        controlledJobTopicCounter.setJob(jobTopicCounterCleanUp);
+        jobControl.addJob(controlledJobTopicCounter);
+
+        // JOB Top-N
+        Configuration confJobTopN = new Configuration();
+        confJobTopN.set("N", args[2]);
+
+        Job jobTopN = Job.getInstance(confJobTopN, "TopN");
+        jobTopN.setJarByClass(TopNPattern.class);
+
+        FileInputFormat.addInputPath(jobTopN, new Path("src/main/resources/temp"));
+        FileOutputFormat.setOutputPath(jobTopN, new Path(args[1]));
+
+        jobTopN.setMapperClass(TopNPattern.TopNMapper.class);
+        jobTopN.setReducerClass(TopNPattern.TopNReducer.class);
+
+        jobTopN.setOutputKeyClass(NullWritable.class);
+        jobTopN.setOutputValueClass(Text.class);
+        jobTopN.setInputFormatClass(KeyValueTextInputFormat.class);
+
+        ControlledJob controlledJobTopN = new ControlledJob(confJobTopN);
+        controlledJobTopN.setJob(jobTopN);
+        controlledJobTopN.addDependingJob(controlledJobTopicCounter);
+        jobControl.addJob(controlledJobTopN);
+
+        Thread runJControl = new Thread(jobControl);
+        runJControl.start();
+        while (!jobControl.allFinished()) {
+            sleep(5000);
+        }
+        return jobTopN.waitForCompletion(true) ? 0 : 1;
+    }
+
+    public static void main(String[] args) throws Exception {
+        int exitCode = ToolRunner.run(new SingleApplicationExecutor(), args);
+        System.exit(exitCode);
     }
 }
