@@ -67,10 +67,11 @@ public class CleanUp {
     }
 
     public static class LanguageFilterMapper extends Mapper<Text, LongWritable, Text, LongWritable> {
-        String filter = "es";
-        // String filter = "en";
+        //String filter = "es";
+        //String filter = "en";
 
         public void map(Text key, LongWritable value, Context context) throws IOException, InterruptedException {
+            String filter  = context.getConfiguration().get("lang");
             try {
                 JSONParser jsonParser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) jsonParser.parse(key.toString());

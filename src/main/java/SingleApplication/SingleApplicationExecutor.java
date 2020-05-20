@@ -32,7 +32,8 @@ public class SingleApplicationExecutor extends Configured implements Tool {
         jobTopicCounterCleanUp.setJarByClass(TopNPattern.class);
 
         FileInputFormat.addInputPath(jobTopicCounterCleanUp, new Path(args[0]));
-        FileOutputFormat.setOutputPath(jobTopicCounterCleanUp, new Path("src/main/resources/temp"));
+        FileOutputFormat.setOutputPath(jobTopicCounterCleanUp, new Path("temp"));
+        confJobTopicCounterCleanUp.set("lang", args[3]);
 
         // LowerCaseMapper
         ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.LowerCaseMapper.class, Object.class,
@@ -53,6 +54,7 @@ public class SingleApplicationExecutor extends Configured implements Tool {
         // TrendingTopicMapper
         ChainMapper.addMapper(jobTopicCounterCleanUp, TrendingTopics.TrendingTopicMapper.class, Text.class,
                 LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
+        jobTopicCounterCleanUp.setCombinerClass(TrendingTopics.TrendingTopicReducer.class);
 
         // TrendingTopicReducer
         jobTopicCounterCleanUp.setReducerClass(TrendingTopics.TrendingTopicReducer.class);
@@ -71,10 +73,11 @@ public class SingleApplicationExecutor extends Configured implements Tool {
         Job jobTopN = Job.getInstance(confJobTopN, "TopN");
         jobTopN.setJarByClass(TopNPattern.class);
 
-        FileInputFormat.addInputPath(jobTopN, new Path("src/main/resources/temp"));
+        FileInputFormat.addInputPath(jobTopN, new Path("temp"));
         FileOutputFormat.setOutputPath(jobTopN, new Path(args[1]));
 
         jobTopN.setMapperClass(TopNPattern.TopNMapper.class);
+        jobTopN.setCombinerClass(TopNPattern.TopNReducer.class);
         jobTopN.setReducerClass(TopNPattern.TopNReducer.class);
 
         jobTopN.setOutputKeyClass(NullWritable.class);
