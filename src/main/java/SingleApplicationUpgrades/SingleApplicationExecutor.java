@@ -1,8 +1,9 @@
-package SingleApplicationUpgrades.SingleApplication;
+package SingleApplicationUpgrades;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
@@ -37,23 +38,23 @@ public class SingleApplicationExecutor extends Configured implements Tool {
 
         // LowerCaseMapper
         ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.LowerCaseMapper.class, Object.class,
-                Text.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
+                Text.class, IntWritable.class, CustomTweetWritable.class, confJobTopicCounterCleanUp);
 
         // RemovalLackingFieldsMapper
-        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.RemoveLackingFieldsMapper.class, Text.class,
-                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.RemoveLackingFieldsMapper.class, IntWritable.class,
+                CustomTweetWritable.class, IntWritable.class, CustomTweetWritable.class, confJobTopicCounterCleanUp);
 
         // RemovalNotUsedFieldsMapper
-        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.FieldSelectorMapper.class, Text.class,
-                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.FieldSelectorMapper.class, IntWritable.class,
+                CustomTweetWritable.class, IntWritable.class, CustomTweetWritable.class, confJobTopicCounterCleanUp);
 
         // FilterLanguageMapper
-        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.LanguageFilterMapper.class, Text.class,
-                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
+        ChainMapper.addMapper(jobTopicCounterCleanUp, CleanUp.LanguageFilterMapper.class, IntWritable.class,
+                CustomTweetWritable.class, IntWritable.class, CustomTweetWritable.class, confJobTopicCounterCleanUp);
 
         // TrendingTopicMapper
-        ChainMapper.addMapper(jobTopicCounterCleanUp, TrendingTopics.TrendingTopicMapper.class, Text.class,
-                LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
+        ChainMapper.addMapper(jobTopicCounterCleanUp, TrendingTopics.TrendingTopicMapper.class, IntWritable.class,
+                CustomTweetWritable.class, Text.class, IntWritable.class, confJobTopicCounterCleanUp);
         jobTopicCounterCleanUp.setCombinerClass(TrendingTopics.TrendingTopicReducer.class);
 
         // TrendingTopicReducer
@@ -77,8 +78,10 @@ public class SingleApplicationExecutor extends Configured implements Tool {
         FileOutputFormat.setOutputPath(jobTopN, new Path(args[1]));
 
         jobTopN.setMapperClass(TopNPattern.TopNMapper.class);
-        jobTopN.setCombinerClass(TopNPattern.TopNReducer.class);
         jobTopN.setReducerClass(TopNPattern.TopNReducer.class);
+
+        jobTopN.setMapOutputKeyClass(NullWritable.class);
+        jobTopN.setMapOutputValueClass(CustomTweetWritable.class);
 
         jobTopN.setOutputKeyClass(NullWritable.class);
         jobTopN.setOutputValueClass(Text.class);

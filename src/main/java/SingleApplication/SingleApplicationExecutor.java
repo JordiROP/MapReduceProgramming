@@ -54,7 +54,6 @@ public class SingleApplicationExecutor extends Configured implements Tool {
         // TrendingTopicMapper
         ChainMapper.addMapper(jobTopicCounterCleanUp, TrendingTopics.TrendingTopicMapper.class, Text.class,
                 LongWritable.class, Text.class, LongWritable.class, confJobTopicCounterCleanUp);
-        jobTopicCounterCleanUp.setCombinerClass(TrendingTopics.TrendingTopicReducer.class);
 
         // TrendingTopicReducer
         jobTopicCounterCleanUp.setReducerClass(TrendingTopics.TrendingTopicReducer.class);
@@ -77,7 +76,6 @@ public class SingleApplicationExecutor extends Configured implements Tool {
         FileOutputFormat.setOutputPath(jobTopN, new Path(args[1]));
 
         jobTopN.setMapperClass(TopNPattern.TopNMapper.class);
-        jobTopN.setCombinerClass(TopNPattern.TopNReducer.class);
         jobTopN.setReducerClass(TopNPattern.TopNReducer.class);
 
         jobTopN.setOutputKeyClass(NullWritable.class);

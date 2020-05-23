@@ -1,7 +1,6 @@
-package SingleApplicationUpgrades.SingleApplication;
+package SingleApplicationUpgrades;
 
 import org.apache.hadoop.io.IntWritable;
-import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.json.simple.JSONArray;
@@ -13,20 +12,20 @@ import java.io.IOException;
 
 public class CleanUp {
 
-    public static class LowerCaseMapper extends Mapper<Object, Text, Object, CustomTweetWrittable> {
-        private final static IntWritable val = new IntWritable();
-        CustomTweetWrittable ctw = new CustomTweetWrittable();
+    public static class LowerCaseMapper extends Mapper<Object, Text, IntWritable, CustomTweetWritable> {
+        private final static IntWritable val = new IntWritable(1);
+        CustomTweetWritable ctw = new CustomTweetWritable();
 
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             ctw.setCounter(val);
             ctw.setTweet(new Text(value.toString().toLowerCase()));
 
-            context.write(key, ctw);
+            context.write(val, ctw);
         }
     }
 
-    public static class RemoveLackingFieldsMapper extends Mapper<Object, CustomTweetWrittable, Object, CustomTweetWrittable> {
-        public void map(Object key, CustomTweetWrittable value, Context context) throws IOException, InterruptedException {
+    public static class RemoveLackingFieldsMapper extends Mapper<IntWritable, CustomTweetWritable, IntWritable, CustomTweetWritable> {
+        public void map(IntWritable key, CustomTweetWritable value, Context context) throws IOException, InterruptedException {
             try {
                 JSONParser jsonParser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) jsonParser.parse(value.getTweet().toString());
@@ -43,8 +42,8 @@ public class CleanUp {
         }
     }
 
-    public static class FieldSelectorMapper extends Mapper<Object, CustomTweetWrittable, Object, CustomTweetWrittable> {
-        public void map(Object key, CustomTweetWrittable value, Context context) throws IOException, InterruptedException {
+    public static class FieldSelectorMapper extends Mapper<IntWritable, CustomTweetWritable, IntWritable, CustomTweetWritable> {
+        public void map(IntWritable key, CustomTweetWritable value, Context context) throws IOException, InterruptedException {
             try {
                 JSONParser jsonParser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) jsonParser.parse(value.getTweet().toString());
@@ -66,8 +65,8 @@ public class CleanUp {
         }
     }
 
-    public static class LanguageFilterMapper extends Mapper<Object, CustomTweetWrittable, Object, CustomTweetWrittable> {
-        public void map(Object key, CustomTweetWrittable value, Context context) throws IOException, InterruptedException {
+    public static class LanguageFilterMapper extends Mapper<IntWritable, CustomTweetWritable, IntWritable, CustomTweetWritable> {
+        public void map(IntWritable key, CustomTweetWritable value, Context context) throws IOException, InterruptedException {
             String filter  = context.getConfiguration().get("lang");
             try {
                 JSONParser jsonParser = new JSONParser();

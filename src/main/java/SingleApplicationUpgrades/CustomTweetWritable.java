@@ -1,4 +1,4 @@
-package SingleApplicationUpgrades.SingleApplication;
+package SingleApplicationUpgrades;
 
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
@@ -8,18 +8,18 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 
-public class CustomTweetWrittable implements Writable {
+public class CustomTweetWritable implements Writable {
     private IntWritable counter;
     private Text tweet;
 
-    public CustomTweetWrittable() {
+    public CustomTweetWritable() {
         this.counter = new IntWritable();
         this.tweet = new Text();
     }
 
-    public CustomTweetWrittable(IntWritable counter, Text tweet) {
-        this.counter = new IntWritable();
-        this.tweet = new Text();
+    public CustomTweetWritable(IntWritable counter, Text tweet) {
+        this.counter = counter;
+        this.tweet = tweet;
     }
 
     public IntWritable getCounter() {

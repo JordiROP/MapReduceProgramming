@@ -54,6 +54,7 @@ public class TopNPattern {
             int N = Integer.parseInt(context.getConfiguration().get("N"));
             for(Text value: values) {
                 String[] valueKey = value.toString().split(",");
+
                 int weight = Integer.parseInt(valueKey[1]);
                 Text topic = new Text(valueKey[0]);
                 multiMap.put(weight, topic);

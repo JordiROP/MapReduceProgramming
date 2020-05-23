@@ -1,4 +1,4 @@
-package SingleApplicationUpgrades.SingleApplication;
+package SingleApplicationUpgrades;
 
 import org.apache.commons.collections4.MultiValuedMap;
 import org.apache.commons.collections4.multimap.ArrayListValuedHashMap;
@@ -12,19 +12,16 @@ import java.io.IOException;
 import java.util.*;
 
 public class TopNPattern {
-
-    public static class TopNMapper extends Mapper<Text, Text, NullWritable, CustomTweetWrittable> {
-        private final MultiValuedMap<Integer, CustomTweetWrittable> multiMap = new ArrayListValuedHashMap<>();
+    public static class TopNMapper extends Mapper<Text, Text, NullWritable, CustomTweetWritable> {
+        private final MultiValuedMap<Integer, CustomTweetWritable> multiMap = new ArrayListValuedHashMap<>();
 
         public void map(Text key, Text value, Context context) {
             int N = 2 * Integer.parseInt(context.getConfiguration().get("N"));
             int weight = Integer.parseInt(value.toString());
-            CustomTweetWrittable ctw = new CustomTweetWrittable(new IntWritable(weight), value);
-
-            multiMap.put(weight, ctw);
+            multiMap.put(weight, new CustomTweetWritable(new IntWritable(weight), new Text(key)));
             if (multiMap.size() > N) {
                 int minKey = getMinKey(multiMap.keySet());
-                CustomTweetWrittable val = multiMap.get(minKey).iterator().next();
+                CustomTweetWritable val = multiMap.get(minKey).iterator().next();
                 multiMap.removeMapping(minKey, val);
             }
         }
@@ -41,20 +38,20 @@ public class TopNPattern {
 
         @Override
         public void cleanup(Context context) throws IOException, InterruptedException {
-            for (CustomTweetWrittable t : multiMap.values()) {
+            for (CustomTweetWritable t : multiMap.values()) {
                 context.write(NullWritable.get(), t);
             }
         }
     }
 
-    public static class TopNReducer extends Reducer<NullWritable, CustomTweetWrittable, NullWritable, Text> {
+    public static class TopNReducer extends Reducer<NullWritable, CustomTweetWritable, NullWritable, Text> {
         private final MultiValuedMap<Integer, Text> multiMap = new ArrayListValuedHashMap<>();
 
-        public void reduce(NullWritable key, Iterable<CustomTweetWrittable> values, Context context) throws IOException, InterruptedException {
+        public void reduce(NullWritable key, Iterable<CustomTweetWritable> values, Context context) throws IOException, InterruptedException {
             int N = Integer.parseInt(context.getConfiguration().get("N"));
-            for(CustomTweetWrittable value: values) {
+            for(CustomTweetWritable value: values) {
                 int weight = value.getCounter().get();
-                Text topic = value.getTweet();
+                Text topic = new Text (value.getTweet());
                 multiMap.put(weight, topic);
             }
             List<Integer> sortedKeys = sort(multiMap.keySet());

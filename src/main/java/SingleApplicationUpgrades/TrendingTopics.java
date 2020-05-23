@@ -1,7 +1,6 @@
-package SingleApplicationUpgrades.SingleApplication;
+package SingleApplicationUpgrades;
 
 import org.apache.hadoop.io.IntWritable;
-import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -14,10 +13,10 @@ import java.io.IOException;
 
 public class TrendingTopics {
 
-    public static class TrendingTopicMapper extends Mapper<Object, CustomTweetWrittable, Text, IntWritable> {
+    public static class TrendingTopicMapper extends Mapper<Object, CustomTweetWritable, Text, IntWritable> {
         private final Text word = new Text();
 
-        public void map(Object key, CustomTweetWrittable value, Context context) throws IOException, InterruptedException {
+        public void map(Object key, CustomTweetWritable value, Context context) throws IOException, InterruptedException {
             try {
                 JSONParser jsonParser = new JSONParser();
                 JSONObject jsonObject = (JSONObject) jsonParser.parse(value.getTweet().toString());
